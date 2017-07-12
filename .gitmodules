@@ -1,0 +1,3 @@
+[submodule "model_abstract"]
+	path = model_abstract
+	url = https://github.com/cutlass90/model_abstract.git
