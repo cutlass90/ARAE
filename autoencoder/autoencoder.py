@@ -4,7 +4,7 @@ import math
 import tensorflow as tf
 from tqdm import tqdm
 
-from ecg.models import Model
+from model_abstract.model_abstract import Model
 
 class AE(Model):
 
@@ -162,9 +162,8 @@ class AE(Model):
         print("Training time --- %s seconds ---" % (time.time() - start_time))
 
 
-################################################################################
-# TESTING
-if __name__ == '__main__':
+
+def test_autoencoder():
     from tensorflow.examples.tutorials.mnist import input_data
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
     ae = AE(input_dim=784, z_dim=100, do_train=True, scope='autoencoder')
@@ -175,6 +174,11 @@ if __name__ == '__main__':
     ae.train_(data_loader=mnist, batch_size=256, weight_decay=1e-2,
         learn_rate_start=1e-2, learn_rate_end=1e-4, n_iter=50000, noise_range=[0.4, 1e-3],
         save_model_every_n_iter=10000, path_to_model='models/ae')
+    
+################################################################################
+# TESTING
+if __name__ == '__main__':
+    test_autoencoder()
 
 
 

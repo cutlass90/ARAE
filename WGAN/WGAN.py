@@ -6,9 +6,9 @@ import itertools as it
 import tensorflow as tf
 import numpy as np
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 from model_abstract.model_abstract import Model
-from plot import sample as plot_samples
 
 class WGAN(Model):
 
@@ -189,3 +189,43 @@ class WGAN(Model):
         z = np.random.normal(size=[100, self.z_dim])
         samples = self.sess.run(self.x_fake, {self.is_training:False, self.z:z})
         return samples
+
+
+#-------------------------------------------------------------------------------
+def to_image(x):
+    return x.reshape(28, 28)
+
+
+#-------------------------------------------------------------------------------
+def plot_samples(samples, step=0):
+
+    fig = plt.figure(figsize=(4, 4))
+    for i, x in enumerate(samples):
+        ax = fig.add_subplot(10, 10, i+1) 
+        ax.imshow(to_image(x), cmap='gray', aspect='auto', interpolation='bicubic')
+        ax.set_axis_off()
+
+    # remove spacings between subplots
+    fig.subplots_adjust(hspace=0, wspace=0, left=0, bottom=0, right=1, top=1)
+    os.makedirs('pics/', exist_ok=True)
+    fig.savefig('pics/sample_{}.png'.format(step))
+    plt.close()
+    print('Sample saved.')
+
+
+#-------------------------------------------------------------------------------
+def test_WGAN():
+    from tensorflow.examples.tutorials.mnist import input_data
+    os.makedirs('models/', exist_ok=True)
+    os.makedirs('summary/', exist_ok=True)
+    mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+
+    gan = WGAN(do_train=True, input_dim=784, z_dim=20, scope='WGAN')
+    gan.train_(data_loader=mnist.train, batch_size=256, n_critic=1, keep_prob=1, weight_decay=0,
+        learn_rate_start=0.0001, learn_rate_end=0.00001,  n_iter=300000,
+        save_model_every_n_iter=15000, path_to_model='models/wgan')
+
+#---------------------------------------------------------------------------
+# testing
+if __name__ == '__main__':
+    test_WGAN()
