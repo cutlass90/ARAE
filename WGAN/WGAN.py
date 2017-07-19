@@ -12,12 +12,13 @@ from model_abstract.model_abstract import Model
 
 class WGAN(Model):
 
-    def __init__(self, do_train, input_dim, z_dim, scope):
+    def __init__(self, do_train, input_dim, z_dim, scope, inputs):
 
         self.do_train = do_train
         self.input_dim = input_dim
         self.z_dim = z_dim
         self.scope = scope
+        self.inputs = inputs
 
         self.disc_sum, self.gen_sum = [], []
         with tf.variable_scope(scope):
@@ -31,7 +32,7 @@ class WGAN(Model):
             self.train_writer, self.test_writer = self.create_summary_writers()
             self.disc_merge = tf.summary.merge(self.disc_sum)
             self.gen_merge = tf.summary.merge(self.gen_sum)
-            self.clip_weights = self.get_clip_weights_op(-0.5, 0.5)
+            self.clip_weights = self.get_clip_weights_op(-0.05, 0.05)
 
         self.sess = self.create_session()
         self.sess.run(tf.global_variables_initializer())
@@ -43,30 +44,28 @@ class WGAN(Model):
     # --------------------------------------------------------------------------
     def create_graph(self):
         print('Creat graph')
-        self.inputs,\
         self.z,\
         self.keep_prob,\
         self.weight_decay,\
         self.learn_rate,\
         self.is_training = self.input_graph()
         
-        self.x_fake = self.generator(z=self.z, structure=[256, 256, self.input_dim])
+        self.x_fake = self.generator(z=self.z, structure=[64, 100, 150, self.input_dim])
 
         x = tf.concat((self.inputs, self.x_fake), 0)
-        self.logits = self.discriminator(x, structure=[256, 256, 1]) # b x 1
+        self.logits = self.discriminator(x, structure=[100, 60, 20, 1]) # b x 1
         print('Done!')
 
 
     # --------------------------------------------------------------------------
     def input_graph(self):
         print('\tinput_graph')
-        inputs = tf.placeholder(tf.float32, shape=[None, self.input_dim], name='inputs')
         z = tf.placeholder(tf.float32, shape=[None, self.z_dim], name='z')
         keep_prob = tf.placeholder(tf.float32, name='keep_prob')
         weight_decay = tf.placeholder(tf.float32, name='weight_decay')
         learn_rate = tf.placeholder(tf.float32, name='learn_rate')
         is_training = tf.placeholder(tf.bool, name='is_training')
-        return inputs, z, keep_prob, weight_decay, learn_rate, is_training
+        return z, keep_prob, weight_decay, learn_rate, is_training
 
     # --------------------------------------------------------------------------
     def generator(self, z, structure):
@@ -81,8 +80,8 @@ class WGAN(Model):
             z = tf.layers.dense(inputs=z, units=self.input_dim, activation=tf.sigmoid,
                 kernel_initializer=tf.contrib.layers.xavier_initializer())
 
-        images = tf.reshape(z, [-1, 28, 28, 1])
-        self.gen_sum.append(tf.summary.image('generated img', images, max_outputs=100))
+        # images = tf.reshape(z, [-1, 28, 28, 1])
+        # self.gen_sum.append(tf.summary.image('generated img', images, max_outputs=100))
         return z
 
 
@@ -158,7 +157,8 @@ class WGAN(Model):
     #---------------------------------------------------------------------------
     def train_(self, data_loader, batch_size, n_critic, keep_prob, weight_decay,  learn_rate_start,
         learn_rate_end, n_iter, save_model_every_n_iter, path_to_model):
-        print('\n\n\n\t----==== Training ====----')
+        # depricated use train_model
+        print('\n\t----==== Training ====----')
             
         start_time = time.time()
         for current_iter in tqdm(range(n_iter)):
@@ -196,6 +196,81 @@ class WGAN(Model):
 
 
     #---------------------------------------------------------------------------
+    def train_model(self, data_loader, batch_size, n_critic, keep_prob, weight_decay,  learn_rate_start,
+        learn_rate_end, n_iter, save_model_every_n_iter, path_to_model):
+        print('\n\t----==== Training ====----')
+            
+        start_time = time.time()
+        for current_iter in tqdm(range(n_iter)):
+            learn_rate = self.scaled_exp_decay(learn_rate_start, learn_rate_end,
+                n_iter, current_iter)
+            if data_loader is not None:
+                inputs = data_loader.next_batch(batch_size)[0]
+            else:
+                inputs = None
+
+
+            self.train_step_disc(inputs, np.random.normal(size=[batch_size, self.z_dim]),
+                keep_prob, weight_decay, learn_rate, True)
+
+            if current_iter % n_critic == 0:
+                self.train_step_gen(inputs, np.random.normal(size=[batch_size, self.z_dim]),
+                keep_prob, weight_decay, learn_rate, True)
+
+            if current_iter % 100 == 0:
+                self.save_summaies(inputs, np.random.normal(size=[batch_size, self.z_dim]),
+                keep_prob, weight_decay, learn_rate, True, current_iter)
+
+            if current_iter%1000 == 0:
+                samples = self.sample()
+                plot_samples(samples, current_iter)
+
+            if (current_iter+1) % save_model_every_n_iter == 0:
+                self.save_model(path=path_to_model, sess=self.sess, step=current_iter+1)
+
+        self.save_model(path=path_to_model, sess=self.sess, step=current_iter+1)
+        print('\nTrain finished!')
+        print("Training time --- %s seconds ---" % (time.time() - start_time))
+
+
+    #---------------------------------------------------------------------------
+    def train_step_disc(self, inputs, z, keep_prob, weight_decay, learn_rate, is_training):
+        feedDict = {self.z : z,
+                    self.keep_prob : keep_prob,
+                    self.weight_decay : weight_decay,
+                    self.learn_rate : learn_rate,
+                    self.is_training : is_training}
+        if inputs is not None: feedDict[self.inputs] = inputs
+        self.sess.run(self.train_disc, feed_dict=feedDict)
+        self.sess.run(self.clip_weights)
+
+
+    #---------------------------------------------------------------------------
+    def train_step_gen(self, inputs, z, keep_prob, weight_decay, learn_rate, is_training):
+        feedDict = {self.z : z,
+                    self.keep_prob : keep_prob,
+                    self.weight_decay : weight_decay,
+                    self.learn_rate : learn_rate,
+                    self.is_training : is_training}
+        if inputs is not None: feedDict[self.inputs] = inputs
+        self.sess.run(self.train_gen, feed_dict=feedDict)
+
+
+    #---------------------------------------------------------------------------
+    def save_summaies(self, inputs, z, keep_prob, weight_decay, learn_rate, is_training, it):
+        feedDict = {self.z : z,
+                    self.keep_prob : keep_prob,
+                    self.weight_decay : weight_decay,
+                    self.learn_rate : learn_rate,
+                    self.is_training : is_training}
+        if inputs is not None: feedDict[self.inputs] = inputs
+        disc_s, gen_s = self.sess.run([self.disc_merge, self.gen_merge], feed_dict=feedDict)
+        self.train_writer.add_summary(disc_s, it)
+        self.train_writer.add_summary(gen_s, it)
+
+
+
+    #---------------------------------------------------------------------------
     def sample(self):
         z = np.random.normal(size=[100, self.z_dim])
         samples = self.sess.run(self.x_fake, {self.is_training:False, self.z:z})
@@ -230,10 +305,11 @@ def test_WGAN():
     os.makedirs('models/', exist_ok=True)
     os.makedirs('summary/', exist_ok=True)
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+    inputs = tf.placeholder(tf.float32, shape=[None, 784], name='inputs')
 
-    gan = WGAN(do_train=True, input_dim=784, z_dim=20, scope='WGAN')
-    gan.train_(data_loader=mnist.train, batch_size=256, n_critic=1, keep_prob=1, weight_decay=0,
-        learn_rate_start=0.001, learn_rate_end=0.0001,  n_iter=300000,
+    gan = WGAN(do_train=True, input_dim=784, z_dim=20, scope='WGAN', inputs=inputs)
+    gan.train_model(data_loader=mnist.train, batch_size=256, n_critic=5, keep_prob=1,
+        weight_decay=0, learn_rate_start=0.001, learn_rate_end=0.0001,  n_iter=300000,
         save_model_every_n_iter=15000, path_to_model='models/wgan')
 
 #---------------------------------------------------------------------------

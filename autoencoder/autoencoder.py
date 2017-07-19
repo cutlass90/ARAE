@@ -109,7 +109,7 @@ class AE(Model):
         tf.summary.scalar('noise_value', self.noise_value)
         tf.summary.scalar('learn_rate', self.learn_rate)
         images = tf.reshape(recovered, [-1, 28, 28, 1])
-        tf.summary.image('generated img', images, max_outputs=12)
+        tf.summary.image('recovered img', images, max_outputs=12)
         return self.mse + self.L2_loss
 
 
@@ -125,6 +125,7 @@ class AE(Model):
     # --------------------------------------------------------------------------
     def train_(self, data_loader, batch_size, weight_decay,  learn_rate_start,
         learn_rate_end, n_iter, noise_range, save_model_every_n_iter, path_to_model):
+        #depricated
         """
         Args:
             noise_range: list, first item - std_start, second item - std_end
@@ -162,14 +163,27 @@ class AE(Model):
         print('\nTrain finished!')
         print("Training time --- %s seconds ---" % (time.time() - start_time))
 
-    def call_train_op(self, inputs, weight_decay, learn_rate, noise_value, is_training):
+
+    # --------------------------------------------------------------------------
+    def train_step(self, inputs, weight_decay, learn_rate, noise_value, is_training):
         feedDict = {self.inputs : inputs,
             self.weight_decay : weight_decay,
             self.learn_rate : learn_rate,
             self.noise_value : noise_value,
             self.is_training : is_training}
-
         self.sess.run(self.train, feed_dict=feedDict)
+
+
+    # --------------------------------------------------------------------------
+    def save_summaries(self, inputs, weight_decay, learn_rate, noise_value, is_training, it):
+        feedDict = {self.inputs : inputs,
+            self.weight_decay : weight_decay,
+            self.learn_rate : learn_rate,
+            self.noise_value : noise_value,
+            self.is_training : is_training}
+        summary = self.sess.run(self.merged, feed_dict=feedDict)
+        self.train_writer.add_summary(summary, it)
+
 
 
 
