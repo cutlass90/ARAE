@@ -31,11 +31,13 @@ class WGAN(Model):
             self.train_writer, self.test_writer = self.create_summary_writers()
             self.disc_merge = tf.summary.merge(self.disc_sum)
             self.gen_merge = tf.summary.merge(self.gen_sum)
+            self.clip_weights = self.get_clip_weights_op(-0.5, 0.5)
 
         self.sess = self.create_session()
         self.sess.run(tf.global_variables_initializer())
         self.stored_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
         self.saver = tf.train.Saver(self.stored_vars, max_to_keep=1000)
+
 
 
     # --------------------------------------------------------------------------
@@ -104,7 +106,9 @@ class WGAN(Model):
         print('get_discriminator_cost')
         true, fake = tf.split(logits, num_or_size_splits=2, axis=0)
         cost = tf.reduce_mean(true - fake)
-        self.disc_sum.append(tf.summary.scalar('discriminator cost', cost))
+        self.disc_sum.append(tf.summary.scalar('discriminator loss', cost))
+        self.disc_sum.append(tf.summary.histogram('true', true))
+        self.disc_sum.append(tf.summary.histogram('fake', fake))
         return cost
 
 
@@ -113,7 +117,7 @@ class WGAN(Model):
         print('get_generator_cost')
         _, fake = tf.split(logits, num_or_size_splits=2, axis=0)
         cost = tf.reduce_mean(fake)
-        self.gen_sum.append(tf.summary.scalar('generator cost', cost))
+        self.gen_sum.append(tf.summary.scalar('generator loss', cost))
         return cost
 
 
@@ -125,7 +129,6 @@ class WGAN(Model):
             disc_list_grad = disc_optimizer.compute_gradients(disc_cost, 
                 var_list=tf.get_collection('trainable_variables',
                     scope=self.scope+'/discriminator'))
-            disc_list_grad = [(tf.clip_by_value(g, -0.05, 0.05),n) for g,n in disc_list_grad]
             disc_grad = tf.reduce_mean([tf.reduce_mean(tf.abs(t))\
                 for t,n in disc_list_grad if t is not None])
             self.disc_sum.append(tf.summary.scalar('disc_grad', disc_grad))
@@ -139,10 +142,17 @@ class WGAN(Model):
                 for t,n in gen_list_grad if t is not None])
             self.gen_sum.append(tf.summary.scalar('gen_grad', gen_grad))
             train_gen = gen_optimizer.apply_gradients(gen_list_grad)
-
-
-
         return train_disc, train_gen
+
+
+    # --------------------------------------------------------------------------
+    def get_clip_weights_op(self, min_value, max_value):
+        print('get_clip_weights_op')
+        var_list=tf.get_collection('trainable_variables',
+                    scope=self.scope+'/discriminator')
+        clip_weights = [tf.assign(v, tf.clip_by_value(v, min_value, max_value))\
+            for v in var_list]
+        return clip_weights
 
 
     #---------------------------------------------------------------------------
@@ -165,6 +175,7 @@ class WGAN(Model):
             
             for _ in range(n_critic):
                 self.sess.run(self.train_disc, feed_dict=feedDict)
+                self.sess.run(self.clip_weights)
             summary = self.sess.run(self.disc_merge, feed_dict=feedDict)
             self.train_writer.add_summary(summary, current_iter)
 
@@ -222,7 +233,7 @@ def test_WGAN():
 
     gan = WGAN(do_train=True, input_dim=784, z_dim=20, scope='WGAN')
     gan.train_(data_loader=mnist.train, batch_size=256, n_critic=1, keep_prob=1, weight_decay=0,
-        learn_rate_start=0.0001, learn_rate_end=0.00001,  n_iter=300000,
+        learn_rate_start=0.001, learn_rate_end=0.0001,  n_iter=300000,
         save_model_every_n_iter=15000, path_to_model='models/wgan')
 
 #---------------------------------------------------------------------------
