@@ -14,6 +14,7 @@ class AE(Model):
         self.input_dim = input_dim
         self.z_dim = z_dim
         self.do_train = do_train
+        self.scope = scope
 
         with tf.variable_scope(scope):
             self.create_graph()
@@ -115,7 +116,7 @@ class AE(Model):
     # --------------------------------------------------------------------------
     def create_optimizer_graph(self, cost):
         print('create_optimizer_graph')
-        with tf.variable_scope('optimizer_graph'):
+        with tf.variable_scope('optimizer_graph'+self.scope):
             optimizer = tf.train.AdamOptimizer(self.learn_rate)
             train = optimizer.minimize(cost)
         return train
@@ -160,6 +161,15 @@ class AE(Model):
         self.save_model(path=path_to_model, sess=self.sess, step=current_iter+1)
         print('\nTrain finished!')
         print("Training time --- %s seconds ---" % (time.time() - start_time))
+
+    def call_train_op(self, inputs, weight_decay, learn_rate, noise_value, is_training):
+        feedDict = {self.inputs : inputs,
+            self.weight_decay : weight_decay,
+            self.learn_rate : learn_rate,
+            self.noise_value : noise_value,
+            self.is_training : is_training}
+
+        self.sess.run(self.train, feed_dict=feedDict)
 
 
 

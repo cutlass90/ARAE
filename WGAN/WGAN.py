@@ -124,7 +124,7 @@ class WGAN(Model):
     # --------------------------------------------------------------------------
     def create_optimizer_graph(self, disc_cost, gen_cost):
         print('create_optimizer_graph')
-        with tf.variable_scope('optimizer_graph'):
+        with tf.variable_scope('optimizer_graph'+self.scope):
             disc_optimizer = tf.train.AdamOptimizer(self.learn_rate)
             disc_list_grad = disc_optimizer.compute_gradients(disc_cost, 
                 var_list=tf.get_collection('trainable_variables',
