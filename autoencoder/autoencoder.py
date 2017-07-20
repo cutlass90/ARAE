@@ -21,7 +21,8 @@ class AE(Model):
         if do_train:
             self.cost = self.create_cost_graph(self.inputs, self.recover)
             self.train = self.create_optimizer_graph(self.cost)
-            self.train_writer, self.test_writer = self.create_summary_writers()
+            self.train_writer, self.test_writer = self.create_summary_writers(
+                path='summary/ae')
             self.merged = tf.summary.merge_all()
 
         self.sess = self.create_session()
@@ -38,7 +39,8 @@ class AE(Model):
         self.weight_decay,\
         self.learn_rate,\
         self.noise_value,\
-        self.is_training = self.input_graph() # inputs shape is # b*n_f x h1 x c1
+        self.is_training,\
+        self.input_z = self.input_graph() # inputs shape is # b*n_f x h1 x c1
 
         self.z = self.encoder(inputs=self.inputs, structure=[800, 400, self.z_dim])
 
@@ -48,7 +50,10 @@ class AE(Model):
         z_noised = self.z
 
         self.recover = self.decoder(inputs=z_noised, structure=[400,800, 1000,
-            self.input_dim])
+            self.input_dim], reuse=False)
+
+        self.recover_from_z = self.decoder(inputs=self.input_z, structure=[400,800, 1000,
+            self.input_dim], reuse=True)
 
         print('Done!')
 
@@ -67,7 +72,9 @@ class AE(Model):
 
         is_training = tf.placeholder(tf.bool, name='is_training')
 
-        return inputs, weight_decay, learn_rate, noise_value, is_training
+        input_z = tf.placeholder(tf.float32, shape=[None, self.z_dim], name='input_z')
+
+        return inputs, weight_decay, learn_rate, noise_value, is_training, input_z
 
     # --------------------------------------------------------------------------
     def encoder(self, inputs, structure):
@@ -85,16 +92,18 @@ class AE(Model):
 
 
     # --------------------------------------------------------------------------
-    def decoder(self, inputs, structure):
+    def decoder(self, inputs, structure, reuse):
         print('\tdecoder')
-        for layer in structure[:-1]:
+        for i, layer in enumerate(structure[:-1]):
             inputs = tf.layers.dense(inputs=inputs, units=layer, activation=None,
-                kernel_initializer=tf.contrib.layers.xavier_initializer())
+                kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                reuse=reuse, name='dec'+str(i))
             inputs = tf.contrib.layers.batch_norm(inputs=inputs, scale=True,
-                updates_collections=None, is_training=self.is_training)
+                updates_collections=None, is_training=self.is_training,
+                reuse=reuse, scope='dec_bn'+str(i))
             inputs = tf.nn.elu(inputs)
         out = tf.layers.dense(inputs=inputs, units=structure[-1], activation=tf.sigmoid,
-            kernel_initializer=tf.contrib.layers.xavier_initializer())
+            kernel_initializer=tf.contrib.layers.xavier_initializer(), reuse=reuse, name='dec_last')
         return out
 
 
@@ -183,6 +192,18 @@ class AE(Model):
             self.is_training : is_training}
         summary = self.sess.run(self.merged, feed_dict=feedDict)
         self.train_writer.add_summary(summary, it)
+
+
+    # --------------------------------------------------------------------------
+    def decode(self, z):
+        recovered = self.sess.run(self.recover_from_z, {self.input_z:z,
+            self.is_training:False})
+        return recovered
+
+    def encode(self, inputs):
+        c = self.sess.run(self.z, {self.inputs:inputs, self.is_training:False})
+        return c
+
 
 
 

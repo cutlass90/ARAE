@@ -4,7 +4,7 @@ from tqdm import tqdm
 import tensorflow as tf
 import numpy as np
 
-from WGAN.WGAN import WGAN, test_WGAN
+from WGAN.WGAN import WGAN, test_WGAN, plot_samples
 from autoencoder.autoencoder import AE
 from classifier.classifier import test_classifier
 from model_abstract.model_abstract import Model
@@ -32,7 +32,8 @@ class ARAE(Model):
 
     # --------------------------------------------------------------------------
     def train_model(self, data_loader, batch_size, weight_decay, n_iter, noise_range,
-        learn_rate_ae, keep_prob, learn_rate_gen, learn_rate_disc, n_critic):
+        learn_rate_ae, keep_prob, learn_rate_gen, learn_rate_disc, n_critic, 
+        save_model_every_n_iter):
         """
         Args:
             noise_range: list, first item - std_start, second item - std_end
@@ -48,6 +49,13 @@ class ARAE(Model):
 
             self.train_wgan(data_loader, batch_size, keep_prob, weight_decay,
                 learn_rate_gen, learn_rate_disc, n_critic, current_iter)
+
+            if (current_iter+1)%1000==0:
+                self.save_samples(current_iter)
+
+            if (current_iter+1) % save_model_every_n_iter == 0:
+                self.ae.save_model(path='models/ae', sess=self.ae.sess, step=current_iter+1)
+                self.wgan.save_model(path='models/wgan', sess=self.wgan.sess, step=current_iter+1)
 
 
     # --------------------------------------------------------------------------
@@ -81,7 +89,7 @@ class ARAE(Model):
                     self.wgan.learn_rate : learn_rate_disc,
                     self.wgan.is_training : True,
                     self.ae.inputs : batch[0],
-                    self.ae.is_training : False}
+                    self.ae.is_training : True}
 
         self.sess.run(self.wgan.train_disc, feed_dict=feedDict)
         self.sess.run(self.wgan.clip_weights)
@@ -96,6 +104,16 @@ class ARAE(Model):
         self.wgan.train_writer.add_summary(gen_s, current_iter)
 
 
+    # --------------------------------------------------------------------------
+    def save_samples(self, current_iter):
+        c = self.wgan.sample()
+        samples = self.ae.decode(c)
+        plot_samples(samples, current_iter)
+
+
+
+
+
 
 def test_ARAE():
     from tensorflow.examples.tutorials.mnist import input_data
@@ -103,5 +121,9 @@ def test_ARAE():
     arae = ARAE(input_dim=784, z_dim=32, c_dim=100, do_train=True)
     arae.train_model(data_loader=mnist, batch_size=256, weight_decay=0.01,
         n_iter=100000, noise_range=[0.4, 1e-3], learn_rate_ae=5e-4, keep_prob=1,
-        learn_rate_gen=5e-5, learn_rate_disc=5e-4, n_critic=10)
+        learn_rate_gen=5e-4, learn_rate_disc=5e-5, n_critic=1, save_model_every_n_iter=15000)
+    arae.ae.save_model('models/ae', arae.ae.sess)
+    arae.wgan.save_model('models/wgan', arae.wgan.sess)
+    arae.ae.load_model('models/ae', arae.ae.sess)
+    arae.wgan.load_model('models/wgan', arae.wgan.sess)
     
