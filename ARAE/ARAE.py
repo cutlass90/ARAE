@@ -89,7 +89,7 @@ class ARAE(Model):
                     self.wgan.learn_rate : learn_rate_disc,
                     self.wgan.is_training : True,
                     self.ae.inputs : batch[0],
-                    self.ae.is_training : True}
+                    self.ae.is_training : False}
 
         self.sess.run(self.wgan.train_disc, feed_dict=feedDict)
         self.sess.run(self.wgan.clip_weights)
@@ -121,7 +121,7 @@ def test_ARAE():
     arae = ARAE(input_dim=784, z_dim=32, c_dim=100, do_train=True)
     arae.train_model(data_loader=mnist, batch_size=256, weight_decay=0.01,
         n_iter=100000, noise_range=[0.4, 1e-3], learn_rate_ae=5e-4, keep_prob=1,
-        learn_rate_gen=5e-4, learn_rate_disc=5e-5, n_critic=1, save_model_every_n_iter=15000)
+        learn_rate_gen=5e-4, learn_rate_disc=1e-5, n_critic=10, save_model_every_n_iter=15000)
     arae.ae.save_model('models/ae', arae.ae.sess)
     arae.wgan.save_model('models/wgan', arae.wgan.sess)
     arae.ae.load_model('models/ae', arae.ae.sess)

@@ -33,7 +33,7 @@ class WGAN(Model):
                 path='summary/wgan')
             self.disc_merge = tf.summary.merge(self.disc_sum)
             self.gen_merge = tf.summary.merge(self.gen_sum)
-            self.clip_weights = self.get_clip_weights_op(-0.5, 0.5)
+            self.clip_weights = self.get_clip_weights_op(-0.05, 0.05)
 
         self.sess = self.create_session()
         self.sess.run(tf.global_variables_initializer())
@@ -129,7 +129,7 @@ class WGAN(Model):
             disc_list_grad = disc_optimizer.compute_gradients(disc_cost, 
                 var_list=tf.get_collection('trainable_variables',
                     scope=self.scope+'/discriminator'))
-            disc_list_grad = [(t*0.2,n) for t,n in disc_list_grad if t is not None]
+            # disc_list_grad = [(t*0.2,n) for t,n in disc_list_grad if t is not None]
             disc_grad = tf.reduce_mean([tf.reduce_mean(tf.abs(t))\
                 for t,n in disc_list_grad if t is not None])
             self.disc_sum.append(tf.summary.scalar('disc_grad', disc_grad))
@@ -309,7 +309,7 @@ def test_WGAN():
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
     inputs = tf.placeholder(tf.float32, shape=[None, 784], name='inputs')
 
-    gan = WGAN(do_train=True, input_dim=784, z_dim=20, scope='WGAN', inputs=inputs)
+    gan = WGAN(do_train=True, input_dim=784, z_dim=32, scope='WGAN', inputs=inputs)
     gan.train_model(data_loader=mnist.train, batch_size=256, n_critic=1, keep_prob=1,
         weight_decay=0, learn_rate_start=0.001, learn_rate_end=0.0001,  n_iter=300000,
         save_model_every_n_iter=15000, path_to_model='models/wgan')

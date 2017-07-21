@@ -19,7 +19,7 @@ class AE(Model):
         with tf.variable_scope(scope):
             self.create_graph()
         if do_train:
-            self.cost = self.create_cost_graph(self.inputs, self.recover)
+            self.cost = self.create_cost_graph(self.inputs, self.logits)
             self.train = self.create_optimizer_graph(self.cost)
             self.train_writer, self.test_writer = self.create_summary_writers(
                 path='summary/ae')
@@ -49,11 +49,13 @@ class AE(Model):
         z_noised = tf.reshape(z_noised,[-1, self.z_dim])
         z_noised = self.z
 
-        self.recover = self.decoder(inputs=z_noised, structure=[400,800, 1000,
+        self.logits = self.decoder(inputs=z_noised, structure=[400,800, 1000,
             self.input_dim], reuse=False)
 
-        self.recover_from_z = self.decoder(inputs=self.input_z, structure=[400,800, 1000,
-            self.input_dim], reuse=True)
+        self.recover=tf.sigmoid(self.logits)
+
+        self.recover_from_z = tf.sigmoid(self.decoder(inputs=self.input_z,
+            structure=[400,800, 1000, self.input_dim], reuse=True))
 
         print('Done!')
 
@@ -79,16 +81,17 @@ class AE(Model):
     # --------------------------------------------------------------------------
     def encoder(self, inputs, structure):
         print('\tencoder')
-        for layer in structure[:-1]:
-            inputs = tf.layers.dense(inputs=inputs, units=layer, activation=None,
+        with tf.variable_scope('encoder'):
+            for layer in structure[:-1]:
+                inputs = tf.layers.dense(inputs=inputs, units=layer, activation=None,
+                    kernel_initializer=tf.contrib.layers.xavier_initializer())
+                inputs = tf.contrib.layers.batch_norm(inputs=inputs, scale=True,
+                    updates_collections=None, is_training=self.is_training)
+                inputs = tf.nn.relu(inputs)
+            out = tf.layers.dense(inputs=inputs, units=structure[-1], activation=None,
                 kernel_initializer=tf.contrib.layers.xavier_initializer())
-            inputs = tf.contrib.layers.batch_norm(inputs=inputs, scale=True,
-                updates_collections=None, is_training=self.is_training)
-            inputs = tf.nn.relu(inputs)
-        out = tf.layers.dense(inputs=inputs, units=structure[-1], activation=None,
-            kernel_initializer=tf.contrib.layers.xavier_initializer())
-        out = out/tf.expand_dims(tf.sqrt(tf.reduce_sum(tf.square(out), 1)), 1) #normalization to 1
-        return out
+            out = out/tf.expand_dims(tf.sqrt(tf.reduce_sum(tf.square(out), 1)), 1) #normalization to 1
+            return out
 
 
     # --------------------------------------------------------------------------
@@ -102,24 +105,25 @@ class AE(Model):
                 updates_collections=None, is_training=self.is_training,
                 reuse=reuse, scope='dec_bn'+str(i))
             inputs = tf.nn.elu(inputs)
-        out = tf.layers.dense(inputs=inputs, units=structure[-1], activation=tf.sigmoid,
+        out = tf.layers.dense(inputs=inputs, units=structure[-1], activation=None,
             kernel_initializer=tf.contrib.layers.xavier_initializer(), reuse=reuse, name='dec_last')
         return out
 
 
     # --------------------------------------------------------------------------
-    def create_cost_graph(self, original, recovered):
+    def create_cost_graph(self, original, logits):
         print('create_cost_graph')
-        self.mse = tf.reduce_mean(tf.square(original - recovered))
+        self.cross_entropy = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(labels=original, logits=logits))
         self.L2_loss = self.weight_decay*sum([tf.reduce_mean(tf.square(var))
             for var in tf.trainable_variables()])
-        tf.summary.scalar('MSE', self.mse)
+        tf.summary.scalar('cross_entropy', self.cross_entropy)
         tf.summary.scalar('L2 loss', self.L2_loss)
         tf.summary.scalar('noise_value', self.noise_value)
         tf.summary.scalar('learn_rate', self.learn_rate)
-        images = tf.reshape(recovered, [-1, 28, 28, 1])
+        images = tf.reshape(self.recover, [-1, 28, 28, 1])
         tf.summary.image('recovered img', images, max_outputs=12)
-        return self.mse + self.L2_loss
+        return self.cross_entropy + self.L2_loss
 
 
     # --------------------------------------------------------------------------
@@ -217,7 +221,7 @@ def test_autoencoder():
     # except FileNotFoundError:
     #     pass
     ae.train_(data_loader=mnist, batch_size=256, weight_decay=1e-2,
-        learn_rate_start=1e-2, learn_rate_end=1e-4, n_iter=50000, noise_range=[0.4, 1e-3],
+        learn_rate_start=1e-2, learn_rate_end=1e-4, n_iter=50000, noise_range=[0.4, 1e-2],
         save_model_every_n_iter=10000, path_to_model='models/ae')
     
 ################################################################################
